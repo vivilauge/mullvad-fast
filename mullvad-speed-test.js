@@ -33,7 +33,7 @@ function parseMullvadRelayList(output) {
             continue;
         }
 
-        // 城市行：City (code) @ lat°N, lng°W
+        // 城市行：City, State (code) @ lat°N, lng°W 或 City (code) @ lat°N, lng°W
         const cityMatch = line.match(/^\t([^(]+) \(([a-z]{3})\) @/);
         if (cityMatch) {
             currentCity = cityMatch[1].trim();
