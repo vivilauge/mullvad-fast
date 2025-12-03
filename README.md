@@ -1,4 +1,4 @@
-节点速度测试工具
+# Mullvad节点速度测试工具
 
 这是一个使用 **Mullvad CLI** 测试所有节点延迟的工具，能够生成美观的 HTML 报告。
 
@@ -11,7 +11,9 @@
 - ✅ 显示统计信息（可用节点数、总节点数等）
 - ✅ 彩色延迟显示（绿色=优秀，橙色=一般，红色=较慢）
 - ✅ 基于官方 Mullvad 工具，数据准确可靠
-- ✅ 延迟显示精确整数值（0ms, 1ms, 200ms等）
+- ✅ 显示所有节点的响应时间
+- ✅ 10秒超时检测，超时的节点显示为"超时"
+- ✅ 延迟显示精确整数值（1ms, 2ms, ..., 10000ms或超时）
 
 ## 使用方法
 
@@ -65,10 +67,16 @@ node mullvad-speed-test.js --country germany
 报告已生成: mullvad-speed-test.html
 在浏览器中打开 mullvad-speed-test.html 查看结果
 
+示例输出:
+```
+开始获取Mullvad服务器列表...
+找到 661 个服务器
+开始测试延迟...
+
 最快的10个节点:
-1. au-syd-wg-304 (Australia) - 0ms
-2. br-sao-wg-303 (Brazil) - 0ms
-3. jp-tyo-wg-002 (Japan) - 0ms
+1. al-tia-wg-003 (Albania) - 360ms
+2. al-tia-wg-004 (Albania) - 349ms
+3. ar-bue-wg-001 (Argentina) - 499ms
 ...
 
 # 筛选特定国家的节点
@@ -77,10 +85,11 @@ node mullvad-speed-test.js --country japan
 开始获取Mullvad服务器列表...
 筛选国家: japan
 找到 9 个服务器
-最快的节点:
-1. jp-osa-wg-003 (Japan) - 0ms
-2. jp-tyo-wg-202 (Japan) - 0ms
 ...
+
+# 所有节点都会被测试和显示，响应超过10秒的显示为"超时"
+# HTML报告会显示所有节点的完整结果，按响应时间排序
+```
 ```
 
 ## 系统要求
