@@ -66,10 +66,10 @@ function parseMullvadRelayList(output) {
 }
 
 // 测试服务器延迟
-function testLatency(ip, timeout = 200) {
+function testLatency(ip, timeout = 10000) {
     try {
-        // 使用ping命令测试延迟，设置超时
-        const pingCommand = `ping -c 1 -W ${timeout/1000} ${ip}`;
+        // 使用ping命令测试延迟，设置10秒超时
+        const pingCommand = `ping -c 1 -W 10 ${ip}`;
         const output = execSync(pingCommand, { timeout: timeout, encoding: 'utf8' });
 
         // 解析ping输出中的延迟时间
@@ -87,13 +87,13 @@ function testLatency(ip, timeout = 200) {
 
         return null;
     } catch (error) {
-        // 如果ping失败，返回null
-        return null;
+        // 如果ping失败或超时，返回-1表示超时
+        return -1;
     }
 }
 
 // 生成HTML报告
-function generateHTML(displayResults, allResults, threshold, countryFilter) {
+function generateHTML(displayResults, allResults, countryFilter) {
     const timestamp = new Date().toLocaleString('zh-CN');
 
     // 按延迟排序（有效的延迟在前，无效的在后）
@@ -215,21 +215,21 @@ function generateHTML(displayResults, allResults, threshold, countryFilter) {
         <h1>Mullvad VPN 节点速度测试报告</h1>
 
         <div class="threshold-info">
-            测试阈值: ${threshold}ms | 显示前100个最快节点${countryFilter ? ` | 筛选国家: ${countryFilter}` : ''} | 测试时间: ${timestamp}
+            10秒超时测试 | 显示所有节点${countryFilter ? ` | 筛选国家: ${countryFilter}` : ''} | 测试时间: ${timestamp}
         </div>
 
         <div class="stats">
             <div class="stat">
-                <div class="stat-number">${allResults.filter(r => r.latency !== null && r.latency <= threshold).length}</div>
-                <div class="stat-label">可用节点 (≤${threshold}ms)</div>
-            </div>
-            <div class="stat">
-                <div class="stat-number">${allResults.filter(r => r.latency !== null).length}</div>
+                <div class="stat-number">${allResults.filter(r => r.latency !== null && r.latency !== -1).length}</div>
                 <div class="stat-label">可达节点</div>
             </div>
             <div class="stat">
-                <div class="stat-number">${displayResults.length}</div>
-                <div class="stat-label">显示节点数</div>
+                <div class="stat-number">${allResults.filter(r => r.latency === -1).length}</div>
+                <div class="stat-label">超时节点</div>
+            </div>
+            <div class="stat">
+                <div class="stat-number">${allResults.length}</div>
+                <div class="stat-label">总节点数</div>
             </div>
         </div>
 
@@ -254,18 +254,22 @@ function generateHTML(displayResults, allResults, threshold, countryFilter) {
                     let latencyClass = 'unknown';
                     let latencyText = '无法连接';
 
-                    if (server.latency !== null) {
-                        if (server.latency <= threshold) {
+                    // 显示延迟值，四舍五入到整数，或者显示超时
+                    let displayLatency;
+                    if (server.latency === -1) {
+                        latencyClass = 'unknown';
+                        displayLatency = "超时";
+                    } else if (server.latency !== null) {
+                        if (server.latency <= 200) {
                             latencyClass = 'good';
-                        } else if (server.latency <= threshold * 1.5) {
+                        } else if (server.latency <= 1000) {
                             latencyClass = 'medium';
                         } else {
                             latencyClass = 'bad';
                         }
-                        // 显示延迟值，四舍五入到整数
-                        const displayLatency = Math.round(server.latency);
-                        latencyText = `${displayLatency}ms`;
+                        displayLatency = `${Math.max(1, Math.round(server.latency))}ms`;
                     }
+                    latencyText = displayLatency;
 
                     return `
                         <tr>
@@ -304,9 +308,10 @@ function generateHTML(displayResults, allResults, threshold, countryFilter) {
                     const aText = a.cells[3].textContent;
                     const bText = b.cells[3].textContent;
 
-                    if (aText === '无法连接' && bText === '无法连接') return 0;
-                    if (aText === '无法连接') return 1;
-                    if (bText === '无法连接') return -1;
+                    // 超时的节点排在最后
+                    if (aText === '超时' && bText !== '超时') return 1;
+                    if (aText !== '超时' && bText === '超时') return -1;
+                    if (aText === '超时' && bText === '超时') return 0;
 
                     aVal = parseFloat(aText);
                     bVal = parseFloat(bText);
@@ -346,7 +351,6 @@ function generateHTML(displayResults, allResults, threshold, countryFilter) {
 // 主函数
 async function main() {
     const args = process.argv.slice(2);
-    const threshold = 200; // 默认200ms
     let countryFilter = null;
 
     // 解析命令行参数
@@ -364,7 +368,7 @@ async function main() {
     if (countryFilter) {
         console.log(`筛选国家: ${countryFilter}`);
     }
-    console.log(`测试阈值: ${threshold}ms`);
+    console.log(`10秒超时测试`);
 
     try {
         let servers = await getMullvadServers();
@@ -386,7 +390,7 @@ async function main() {
 
         for (const server of servers) {
             if (server.ipv4_addr_in && server.active) {
-                const latency = testLatency(server.ipv4_addr_in, threshold);
+                const latency = testLatency(server.ipv4_addr_in);
                 results.push({
                     ...server,
                     latency: latency
@@ -403,13 +407,21 @@ async function main() {
 
         console.log('\n\n生成HTML报告...');
 
-        // 按延迟排序
-        const sortedResults = results
-            .filter(server => server.latency !== null)
-            .sort((a, b) => a.latency - b.latency)
-            .slice(0, 100); // 只保留前100个最快的节点
+        // 按延迟排序（有效的延迟在前，超时的在后）
+        const sortedResults = results.sort((a, b) => {
+            // 超时的节点（latency === -1）放在最后
+            if (a.latency === -1 && b.latency !== -1) return 1;
+            if (a.latency !== -1 && b.latency === -1) return -1;
 
-        const html = generateHTML(sortedResults, results, threshold, countryFilter);
+            // 都有效的情况下，按延迟排序
+            if (a.latency !== -1 && b.latency !== -1) {
+                return a.latency - b.latency;
+            }
+
+            return 0;
+        });
+
+        const html = generateHTML(sortedResults, results, countryFilter);
         const filename = `mullvad-speed-test.html`;
         fs.writeFileSync(filename, html);
 
@@ -420,8 +432,13 @@ async function main() {
         const validResults = results.filter(r => r.latency !== null).sort((a, b) => a.latency - b.latency);
         console.log('\n最快的10个节点:');
         validResults.slice(0, 10).forEach((server, index) => {
-            const displayLatency = Math.round(server.latency);
-            console.log(`${index + 1}. ${server.hostname} (${server.country_name || server.country_code}) - ${displayLatency}ms`);
+            let displayLatency;
+            if (server.latency === -1) {
+                displayLatency = "超时";
+            } else {
+                displayLatency = `${Math.max(1, Math.round(server.latency))}ms`;
+            }
+            console.log(`${index + 1}. ${server.hostname} (${server.country_name || server.country_code}) - ${displayLatency}`);
         });
 
     } catch (error) {
